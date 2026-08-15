@@ -1,0 +1,19 @@
+# CareMart robots.txt for tumacaremart.shop
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /checkout
+Disallow: /order-success
+
+# Googlebot specific rules
+User-agent: Googlebot
+Allow: /
+Allow: /shop
+Allow: /track-order
+Allow: /contact
+Allow: /categories
+Allow: /faq
+Disallow: /admin
+
+# Sitemap Location
+Sitemap: https://tumacaremart.shop/sitemap.xml

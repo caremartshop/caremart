@@ -1,0 +1,150 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "Registered user profile records",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "products": {
+      "title": "Product",
+      "description": "E-commerce product catalog items",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "category": { "type": "string" },
+        "brand": { "type": "string" },
+        "price": { "type": "number" },
+        "originalPrice": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "number" },
+        "inStock": { "type": "boolean" },
+        "stockCount": { "type": "number" },
+        "images": { "type": "array" },
+        "description": { "type": "string" },
+        "features": { "type": "array" },
+        "isFeatured": { "type": "boolean" },
+        "isFlashDeal": { "type": "boolean" },
+        "isBestSeller": { "type": "boolean" },
+        "discretePackaging": { "type": "boolean" }
+      },
+      "required": ["id", "name", "category", "price"]
+    },
+    "categories": {
+      "title": "Category",
+      "description": "Product categories",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "itemCount": { "type": "number" }
+      },
+      "required": ["id", "name", "slug"]
+    },
+    "orders": {
+      "title": "Order",
+      "description": "Customer purchase orders",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "shipping": { "type": "number" },
+        "tax": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string" },
+        "shippingAddress": { "type": "object" },
+        "paymentMethod": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "discretePackaging": { "type": "boolean" },
+        "trackingNumber": { "type": "string" }
+      },
+      "required": ["id", "userId", "items", "total", "status"]
+    },
+    "reviews": {
+      "title": "Review",
+      "description": "Product customer reviews",
+      "properties": {
+        "id": { "type": "string" },
+        "productId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "rating": { "type": "number" },
+        "title": { "type": "string" },
+        "comment": { "type": "string" },
+        "verifiedPurchase": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "productId", "rating", "comment"]
+    },
+    "coupons": {
+      "title": "Coupon",
+      "description": "Discount coupon codes",
+      "properties": {
+        "code": { "type": "string" },
+        "discountPercent": { "type": "number" },
+        "active": { "type": "boolean" },
+        "minSpend": { "type": "number" }
+      },
+      "required": ["code", "discountPercent"]
+    },
+    "hero_slides": {
+      "title": "Hero Slide",
+      "description": "Homepage hero banner slides",
+      "properties": {
+        "id": { "type": "string" },
+        "badge": { "type": "string" },
+        "title": { "type": "string" },
+        "image": { "type": "string" },
+        "bannerBg": { "type": "string" },
+        "textColor": { "type": "string" },
+        "badgeBg": { "type": "string" },
+        "primaryBtnLabel": { "type": "string" },
+        "primaryBtnAction": { "type": "string" }
+      },
+      "required": ["id", "title", "image"]
+    },
+    "partner_pharmacies": {
+      "title": "Partner Pharmacy",
+      "description": "Certified network pharmacy partners",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "licenseNo": { "type": "string" },
+        "location": { "type": "string" },
+        "specialty": { "type": "string" },
+        "badge": { "type": "string" },
+        "rating": { "type": "number" },
+        "image": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "location"]
+    },
+    "inquiries": {
+      "title": "Customer Inquiry",
+      "description": "Inbound customer support messages",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "message", "status"]
+    }
+  }
+}

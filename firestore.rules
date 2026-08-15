@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function for admin check
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email == 'admin@secureshop.com' ||
+        request.auth.token.admin == true ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
+    }
+    
+    // Helper function for user authentication
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper for self ownership
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Products collection: public read and write
+    match /products/{productId} {
+      allow read, write: if true;
+    }
+
+    // Categories collection: public read and write
+    match /categories/{categoryId} {
+      allow read, write: if true;
+    }
+
+    // Users collection: read and write
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // Orders collection: read and write
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    // Reviews collection: read and write
+    match /reviews/{reviewId} {
+      allow read, write: if true;
+    }
+
+    // Coupons collection: read and write
+    match /coupons/{couponId} {
+      allow read, write: if true;
+    }
+
+    // Hero Slides collection: read and write
+    match /hero_slides/{slideId} {
+      allow read, write: if true;
+    }
+
+    // Partner Pharmacies collection: read and write
+    match /partner_pharmacies/{pharmacyId} {
+      allow read, write: if true;
+    }
+
+    // Inquiries collection: read and write
+    match /inquiries/{inquiryId} {
+      allow read, write: if true;
+    }
+
+    // Settings & Banners
+    match /settings/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

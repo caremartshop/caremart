@@ -1,0 +1,58 @@
+{
+  "name": "CareMart - Discrete Health & Wellness",
+  "short_name": "CareMart",
+  "description": "100% Discrete, Private & Fast Delivery for Health & Wellness in Rwanda",
+  "start_url": "/",
+  "id": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#ffffff",
+  "theme_color": "#dc2626",
+  "orientation": "portrait-primary",
+  "categories": ["shopping", "lifestyle", "medical"],
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Shop Products",
+      "short_name": "Shop",
+      "description": "Browse health, personal care and wellness catalog",
+      "url": "/shop",
+      "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Track Discrete Order",
+      "short_name": "Track Order",
+      "description": "Live GPS dispatch and order status tracker",
+      "url": "/track-order",
+      "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Contact Customer Care",
+      "short_name": "Contact Us",
+      "description": "24/7 confidential customer helpline and support",
+      "url": "/contact",
+      "icons": [{ "src": "/logo-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
+}

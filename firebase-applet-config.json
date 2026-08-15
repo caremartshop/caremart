@@ -1,0 +1,12 @@
+{
+  "projectId": "caremart-shop",
+  "appId": "1:397788280349:web:d1b3e42d4d8fe6cfe5b8f4",
+  "apiKey": "AIzaSyCtoN3rm9t9ke8VezsWT3LdfZWWaFilHoU",
+  "authDomain": "caremart-shop.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "caremart-shop.firebasestorage.app",
+  "messagingSenderId": "397788280349",
+  "measurementId": "",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

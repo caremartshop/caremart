@@ -1,0 +1,8 @@
+{
+  "name": "CareMart",
+  "description": "Modern, discrete, and secure online store for sexual wellness, intimate care, and health products.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
