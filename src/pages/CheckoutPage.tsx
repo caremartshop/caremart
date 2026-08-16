@@ -24,7 +24,7 @@ export const CheckoutPage: React.FC = () => {
     deliveryInstructions: 'Deliver in plain unbranded packaging.'
   });
 
-  const [paymentMethod, setPaymentMethod] = useState<'MTN MoMo (Paypack)' | 'Airtel Money (Paypack)'>('MTN MoMo (Paypack)');
+  const [paymentMethod, setPaymentMethod] = useState<'MTN MoMo' | 'Airtel Money'>('MTN MoMo');
   
   // Payment Verification Modal state
   const [paymentPhone, setPaymentPhone] = useState(userProfile?.phone || '0788123456');
@@ -164,7 +164,7 @@ export const CheckoutPage: React.FC = () => {
 
     setPaymentModalOpen(true);
     setPaymentStatus('initiating');
-    setPaymentMessage('Connecting to Paypack Rwanda gateway...');
+    setPaymentMessage('Connecting to Payment gateway...');
 
     try {
       const mode = paymentMethod.includes('MoMo') ? 'momo' : 'airtel';
@@ -182,7 +182,7 @@ export const CheckoutPage: React.FC = () => {
 
       if (!response.ok || !data.success) {
         setPaymentStatus('failed');
-        setPaymentMessage(data.error || 'Failed to trigger Paypack payment push prompt.');
+        setPaymentMessage(data.error || 'Failed to trigger payment push prompt.');
         return;
       }
 
@@ -235,7 +235,7 @@ export const CheckoutPage: React.FC = () => {
             }
           }
         } catch (err) {
-          console.warn('Paypack status poll error:', err);
+          console.warn('Payment status poll error:', err);
         }
       }, 2000);
 
@@ -404,13 +404,13 @@ export const CheckoutPage: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
               {[
                 { 
-                  key: 'MTN MoMo (Paypack)', 
+                  key: 'MTN MoMo', 
                   title: t('checkout.momo_title', 'MTN Mobile Money (MoMo)'), 
                   desc: t('checkout.momo_desc', 'Instant prompt on phone (078/079)'), 
                   LogoComponent: MtnMomoLogo 
                 },
                 { 
-                  key: 'Airtel Money (Paypack)', 
+                  key: 'Airtel Money', 
                   title: t('checkout.airtel_title', 'Airtel Money (Rwanda)'), 
                   desc: t('checkout.airtel_desc', 'Instant prompt on phone (072/073)'), 
                   LogoComponent: AirtelMoneyLogo 

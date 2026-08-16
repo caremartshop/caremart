@@ -387,10 +387,8 @@ export const ProfilePage: React.FC = () => {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { key: 'MTN MoMo (Paypack)', title: 'MTN Mobile Money', LogoComponent: MtnMomoLogo },
-                { key: 'Airtel Money (Paypack)', title: 'Airtel Money', LogoComponent: AirtelMoneyLogo },
-                { key: 'Credit Card', title: 'Credit / Debit Card', LogoComponent: () => <CreditCard className="w-5 h-5 text-slate-600" /> },
-                { key: 'Discrete Cash on Delivery', title: 'Cash on Delivery', LogoComponent: () => <Box className="w-5 h-5 text-slate-600" /> }
+                { key: 'MTN MoMo', title: 'MTN Mobile Money', LogoComponent: MtnMomoLogo },
+                { key: 'Airtel Money', title: 'Airtel Money', LogoComponent: AirtelMoneyLogo },
               ].map((m) => (
                 <div
                   key={m.key}

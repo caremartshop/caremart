@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/server.ts": {
-      "includeFiles": ["dist/server.cjs"]
+      "includeFiles": "dist/server.cjs"
     }
   },
   "rewrites": [
