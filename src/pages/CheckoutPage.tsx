@@ -249,9 +249,9 @@ export const CheckoutPage: React.FC = () => {
     e.preventDefault();
     if (cart.length === 0 || isFinalizingRef.current || isSubmitting) return;
 
-    if (paymentMethod.includes('Paypack')) {
-      await handlePaypackPayment();
-    } else {
+    if (paymentMethod === 'MTN MoMo' || paymentMethod === 'Airtel Money') {
+  await handlePaypackPayment();
+} else {
       setIsSubmitting(true);
       setPaymentModalOpen(true);
       setPaymentStatus('waiting_verification');
