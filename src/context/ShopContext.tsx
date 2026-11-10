@@ -1,14 +1,18 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { 
   collection, 
   onSnapshot, 
   doc, 
   setDoc, 
   deleteDoc, 
-  addDoc 
+  getDoc,
+  query,
+  where
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { seedFirestoreIfEmpty } from '../lib/seedFirestore';
+import { useAuth } from './AuthContext';
+import { applyMetaToDocument, categoryMeta, categoryPath, findProduct, pageKeyForPath, productMeta, productPath, staticPageMeta } from '../lib/seo';
+import { ORDER_LOOKUP_COLLECTION, lookupDocId, lookupDocIds, phoneKey, toLookupRecord } from '../lib/orderLookup';
 import { Product, Category, CartItem, Order, Coupon, FilterState, HeroSlide, PartnerPharmacy, CustomerInquiry } from '../types';
 
 export interface ToastMessage {
@@ -60,7 +64,10 @@ interface ShopContextType {
   resetFilters: () => void;
 
   // Orders
-  placeOrder: (orderData: Omit<Order, 'id' | 'createdAt' | 'trackingNumber'>) => Promise<Order>;
+  /** Store a server-created (paid) order locally: device history, success page, clears the cart. */
+  recordCompletedOrder: (order: Order) => Order;
+  /** Guest tracking: fetch one order by its ID/tracking code + the phone number used. */
+  lookupOrder: (code: string, phone: string) => Promise<Order | null>;
 
   // Toasts
   addToast: (title: string, description?: string, type?: 'success' | 'info' | 'error') => void;
@@ -70,6 +77,9 @@ interface ShopContextType {
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
+  addCategory: (category: Omit<Category, 'id'>) => Promise<void>;
+  updateCategory: (id: string, category: Partial<Category>) => Promise<void>;
+  deleteCategory: (id: string) => Promise<void>;
   updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
   deleteOrder: (orderId: string) => Promise<void>;
   addCoupon: (coupon: Coupon) => Promise<void>;
@@ -98,7 +108,11 @@ const DEFAULT_FILTERS: FilterState = {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
+const DEVICE_ORDERS_KEY = 'caremart_device_orders';
+const MAX_DEVICE_ORDERS = 10;
+
 export function ShopProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser, isAdmin, loading: authLoading } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -116,10 +130,32 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('secureshop_orders');
-    return saved ? JSON.parse(saved) : [];
+  // Orders the current account may read (admin: all; customer: own; guest: none)
+  const [remoteOrders, setRemoteOrders] = useState<Order[]>([]);
+  // Orders placed or looked up on this device (lets guests see their own orders)
+  const [deviceOrders, setDeviceOrders] = useState<Order[]>(() => {
+    try {
+      localStorage.removeItem('secureshop_orders'); // legacy cache that held every customer's orders
+      const saved = localStorage.getItem(DEVICE_ORDERS_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
+
+  const orders = useMemo(() => {
+    const map = new Map<string, Order>();
+    deviceOrders.forEach((o) => o?.id && map.set(o.id, o));
+    remoteOrders.forEach((o) => o?.id && map.set(o.id, o)); // live data wins
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+    );
+  }, [remoteOrders, deviceOrders]);
+
+  const rememberOnDevice = (order: Order) => {
+    const { deliveryLocation, ...safe } = order;
+    setDeviceOrders((prev) => [safe as Order, ...prev.filter((o) => o.id !== order.id)].slice(0, MAX_DEVICE_ORDERS));
+  };
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [discreteMode, setDiscreteMode] = useState<boolean>(false);
@@ -130,58 +166,32 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   const getInitialPageFromUrl = (): { page: string; productId?: string; categorySlug?: string; searchQuery?: string } => {
     if (typeof window === 'undefined') return { page: 'home' };
 
-    const pathname = window.location.pathname.toLowerCase().replace(/\/$/, '') || '/';
+    const rawPath = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     const viewParam = params.get('view')?.toLowerCase();
     const searchParam = params.get('search') || params.get('q') || '';
     const categoryParam = params.get('category') || '';
     const productParam = params.get('product') || params.get('id') || '';
 
-    if (pathname === '/shop' || viewParam === 'shop') {
+    // Legacy ?view=xxx links map onto the same pages as /xxx
+    const key = pageKeyForPath(rawPath) === 'home' && viewParam ? pageKeyForPath('/' + viewParam) : pageKeyForPath(rawPath);
+
+    if (key === 'product-detail') {
+      const ref = rawPath.split('/')[2] || '';
+      return { page: 'product-detail', productId: decodeURIComponent(ref) };
+    }
+    if (key === 'shop') {
+      if (productParam) return { page: 'product-detail', productId: productParam }; // old /shop?product= links
       return { page: 'shop', searchQuery: searchParam, categorySlug: categoryParam };
     }
-    if (pathname === '/track-order' || pathname === '/tracking' || pathname === '/track' || viewParam === 'tracking' || viewParam === 'track-order') {
-      return { page: 'tracking' };
-    }
-    if (pathname === '/contact' || pathname === '/contact-us' || viewParam === 'contact' || viewParam === 'contact-us') {
-      return { page: 'contact' };
-    }
-    if (pathname === '/categories' || viewParam === 'categories') {
-      return { page: 'categories' };
-    }
-    if (pathname === '/order-success' || pathname === '/order-confirmed' || pathname === '/success' || viewParam === 'order-success' || viewParam === 'success') {
+    if (key === 'order-success') {
       const orderIdParam = params.get('id') || params.get('orderId') || productParam || '';
       return { page: 'order-success', productId: orderIdParam || undefined };
     }
-    if (pathname === '/cart' || viewParam === 'cart') {
-      return { page: 'cart' };
-    }
-    if (pathname === '/checkout' || viewParam === 'checkout') {
-      return { page: 'checkout' };
-    }
-    if (pathname === '/login' || viewParam === 'login') {
-      return { page: 'login' };
-    }
-    if (pathname === '/register' || viewParam === 'register') {
-      return { page: 'register' };
-    }
-    if (pathname === '/faq' || viewParam === 'faq') {
-      return { page: 'faq' };
-    }
-    if (pathname === '/privacy' || viewParam === 'privacy') {
-      return { page: 'privacy' };
-    }
-    if (pathname === '/terms' || viewParam === 'terms') {
-      return { page: 'terms' };
-    }
-    if (pathname === '/admin' || viewParam === 'admin') {
-      return { page: 'admin' };
-    }
-    if (productParam) {
-      return { page: 'product-detail', productId: productParam };
-    }
-
-    return { page: 'home' };
+    if (key && key !== 'home') return { page: key };
+    if (productParam) return { page: 'product-detail', productId: productParam };
+    if (key === 'home') return { page: 'home' };
+    return { page: 'not-found' };
   };
 
   const initialRoute = getInitialPageFromUrl();
@@ -189,99 +199,47 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   const [activeProductId, setActiveProductId] = useState<string | null>(initialRoute.productId || null);
   const [activeCategorySlug, setActiveCategorySlug] = useState<string | null>(initialRoute.categorySlug || null);
 
-  // SEO & URL sync helper
-  const updatePageSeoAndUrl = (page: string, params?: { productId?: string; categorySlug?: string }, pushState = true) => {
-    let urlPath = '/';
-    let docTitle = 'CareMart - 100% Discrete Health, Wellness & Pharmacy Store Rwanda | tumacaremart.shop';
-    let canonicalUrl = 'https://tumacaremart.shop/';
+  // Latest catalogue for SEO lookups (handlers below are created before products load)
+  const catalogRef = React.useRef<{ products: Product[]; categories: Category[] }>({ products: [], categories: [] });
 
-    switch (page) {
-      case 'shop':
-        urlPath = '/shop';
-        docTitle = 'Shop Health, Intimate & Wellness Products | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/shop';
-        break;
-      case 'tracking':
-        urlPath = '/track-order';
-        docTitle = 'Track Discrete Order & Live GPS Courier Dispatch | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/track-order';
-        break;
-      case 'contact':
-        urlPath = '/contact';
-        docTitle = 'Contact Us - 24/7 Confidential Customer Support (+250 788 345 678) | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/contact';
-        break;
-      case 'categories':
-        urlPath = '/categories';
-        docTitle = 'Browse Health & Intimate Categories | CareMart Rwanda (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/categories';
-        break;
-      case 'product-detail':
-        urlPath = params?.productId ? `/shop?product=${encodeURIComponent(params.productId)}` : '/shop';
-        docTitle = 'Product Details | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/shop';
-        break;
-      case 'cart':
-        urlPath = '/cart';
-        docTitle = 'Discrete Shopping Cart | CareMart Rwanda (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/cart';
-        break;
-      case 'checkout':
-        urlPath = '/checkout';
-        docTitle = 'Secure Checkout (MTN MoMo & Airtel Money) | CareMart Rwanda';
-        canonicalUrl = 'https://tumacaremart.shop/checkout';
-        break;
-      case 'order-success':
-        urlPath = params?.productId ? `/order-success?id=${encodeURIComponent(params.productId)}` : '/order-success';
-        docTitle = 'Order Confirmed & Placed | CareMart Rwanda (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/order-success';
-        break;
-      case 'login':
-        urlPath = '/login';
-        docTitle = 'Sign In to Your Account | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/login';
-        break;
-      case 'register':
-        urlPath = '/register';
-        docTitle = 'Create Discrete Account | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/register';
-        break;
-      case 'faq':
-        urlPath = '/faq';
-        docTitle = 'Frequently Asked Questions & Delivery Guide | CareMart (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/faq';
-        break;
-      case 'privacy':
-        urlPath = '/privacy';
-        docTitle = 'Discretion & Privacy Policy | CareMart Rwanda (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/privacy';
-        break;
-      case 'terms':
-        urlPath = '/terms';
-        docTitle = 'Terms & Conditions | CareMart Rwanda (tumacaremart.shop)';
-        canonicalUrl = 'https://tumacaremart.shop/terms';
-        break;
-      case 'admin':
-        urlPath = '/admin';
-        docTitle = 'Store Administration Console | CareMart';
-        canonicalUrl = 'https://tumacaremart.shop/admin';
-        break;
-      default:
-        urlPath = '/';
-        docTitle = 'CareMart - 100% Discrete Health, Wellness & Pharmacy Store Rwanda | tumacaremart.shop';
-        canonicalUrl = 'https://tumacaremart.shop/';
-    }
+  // SEO & URL sync helper: sets title/description/canonical/structured data and the address-bar URL
+  const updatePageSeoAndUrl = (
+    page: string,
+    params?: { productId?: string; categorySlug?: string },
+    mode: boolean | 'push' | 'replace' | 'none' = 'push'
+  ) => {
+    const history = mode === true ? 'push' : mode === false ? 'none' : mode;
+    const { products: allProducts, categories: allCategories } = catalogRef.current;
 
-    if (typeof document !== 'undefined') {
-      document.title = docTitle;
-      const canonicalTag = document.querySelector('link[rel="canonical"]');
-      if (canonicalTag) {
-        canonicalTag.setAttribute('href', canonicalUrl);
+    let meta = staticPageMeta(page);
+    let urlPath = page === 'not-found' ? window.location.pathname : new URL(meta.canonical).pathname;
+
+    if (page === 'product-detail') {
+      const product = findProduct(allProducts, params?.productId);
+      if (product) {
+        const category = allCategories.find((c) => c.slug === product.category || c.name === product.category || c.id === product.category);
+        meta = productMeta(product, category);
+        urlPath = productPath(product);
+      } else {
+        urlPath = params?.productId ? `/product/${encodeURIComponent(params.productId)}` : '/shop';
+        meta = { ...staticPageMeta('shop'), title: 'Product | CareMart Rwanda', canonical: `https://tumacaremart.shop${urlPath}` };
       }
+    } else if (page === 'shop' && params?.categorySlug) {
+      const category = allCategories.find((c) => c.slug === params.categorySlug);
+      urlPath = category ? categoryPath(category) : `/shop?category=${encodeURIComponent(params.categorySlug)}`;
+      if (category) meta = categoryMeta(category);
+    } else if (page === 'order-success' && params?.productId) {
+      urlPath = `/order-success?id=${encodeURIComponent(params.productId)}`;
     }
 
-    if (pushState && typeof window !== 'undefined' && window.location.pathname !== urlPath) {
-      window.history.pushState({ page, params }, docTitle, urlPath);
+    applyMetaToDocument(meta);
+
+    if (typeof window !== 'undefined' && history !== 'none') {
+      const current = window.location.pathname + window.location.search;
+      if (current !== urlPath) {
+        if (history === 'push') window.history.pushState({ page, params }, meta.title, urlPath);
+        else window.history.replaceState({ page, params }, meta.title, urlPath);
+      }
     }
   };
 
@@ -313,8 +271,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
 
   // Firestore initial seeding & listener
   useEffect(() => {
-    seedFirestoreIfEmpty();
-
     const unsubProducts = onSnapshot(collection(db, 'products'), (snapshot) => {
       const loaded: Product[] = snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
@@ -364,46 +320,86 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       console.warn('Firestore partner_pharmacies snapshot listener error:', error);
     });
 
-    const unsubOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
-      const loaded: Order[] = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      } as Order));
-      // Deduplicate by ID
-      const orderMap = new Map<string, Order>();
-      loaded.forEach((ord) => {
-        if (ord && ord.id) {
-          orderMap.set(ord.id, ord);
-        }
-      });
-      const uniqueList = Array.from(orderMap.values());
-      uniqueList.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      setOrders(uniqueList);
-    }, (error) => {
-      console.warn('Firestore orders snapshot listener error:', error);
-    });
-
-    const unsubInquiries = onSnapshot(collection(db, 'inquiries'), (snapshot) => {
-      const loaded: CustomerInquiry[] = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data()
-      } as CustomerInquiry));
-      loaded.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      setInquiries(loaded);
-    }, (error) => {
-      console.warn('Firestore inquiries snapshot listener error:', error);
-    });
-
     return () => {
       unsubProducts();
       unsubCategories();
       unsubCoupons();
       unsubHeroSlides();
       unsubPartners();
-      unsubOrders();
-      unsubInquiries();
     };
   }, []);
+
+  // Product/category titles & structured data depend on the catalogue; refresh them when it loads
+  useEffect(() => {
+    catalogRef.current = { products, categories };
+    if (currentPage === 'product-detail' || (currentPage === 'shop' && activeCategorySlug)) {
+      updatePageSeoAndUrl(
+        currentPage,
+        { productId: activeProductId || undefined, categorySlug: activeCategorySlug || undefined },
+        'replace'
+      );
+    }
+  }, [products, categories, currentPage, activeProductId, activeCategorySlug]);
+
+  // Orders: admins see everything, signed-in customers only their own, guests nothing
+  useEffect(() => {
+    if (authLoading) return;
+    setRemoteOrders([]);
+    if (!currentUser) return;
+    const source = isAdmin
+      ? collection(db, 'orders')
+      : query(collection(db, 'orders'), where('userId', '==', currentUser.uid));
+    const unsub = onSnapshot(
+      source,
+      (snapshot) => {
+        setRemoteOrders(snapshot.docs.map((d) => ({ ...(d.data() as Order), id: d.id })));
+      },
+      (error) => console.warn('Firestore orders snapshot listener error:', error)
+    );
+    return unsub;
+  }, [authLoading, currentUser?.uid, isAdmin]);
+
+  // Inquiries: admin only
+  useEffect(() => {
+    setInquiries([]);
+    if (!isAdmin) return;
+    const unsub = onSnapshot(
+      collection(db, 'inquiries'),
+      (snapshot) => {
+        const loaded: CustomerInquiry[] = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as CustomerInquiry));
+        loaded.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setInquiries(loaded);
+      },
+      (error) => console.warn('Firestore inquiries snapshot listener error:', error)
+    );
+    return unsub;
+  }, [isAdmin]);
+
+  // One-time backfill so orders placed before this change can be tracked by guests
+  const hasRemoteOrders = remoteOrders.length > 0;
+  useEffect(() => {
+    if (!isAdmin || !hasRemoteOrders) return;
+    const FLAG = 'caremart_lookup_backfill_v1';
+    try {
+      if (localStorage.getItem(FLAG)) return;
+    } catch {
+      return;
+    }
+    (async () => {
+      for (const ord of remoteOrders) {
+        for (const id of lookupDocIds(ord)) {
+          await setDoc(doc(db, ORDER_LOOKUP_COLLECTION, id), toLookupRecord(ord)).catch((e) =>
+            console.warn('lookup backfill error:', e)
+          );
+        }
+      }
+      try {
+        localStorage.setItem(FLAG, new Date().toISOString());
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [isAdmin, hasRemoteOrders]);
 
   // Save cart & wishlist local state
   useEffect(() => {
@@ -415,8 +411,12 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   }, [wishlist]);
 
   useEffect(() => {
-    localStorage.setItem('secureshop_orders', JSON.stringify(orders));
-  }, [orders]);
+    try {
+      localStorage.setItem(DEVICE_ORDERS_KEY, JSON.stringify(deviceOrders));
+    } catch {
+      /* ignore quota/private mode */
+    }
+  }, [deviceOrders]);
 
   const navigateTo = (page: string, params?: { productId?: string; categorySlug?: string }) => {
     setCurrentPage(page);
@@ -529,29 +529,10 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     return clean;
   };
 
-  const placeOrder = async (orderData: Omit<Order, 'id' | 'createdAt' | 'trackingNumber'>): Promise<Order> => {
-    const orderId = 'ORD-' + Math.floor(100000 + Math.random() * 900000);
-    const trackingNumber = 'SS-TRK-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-    
-    const newOrder: Order = {
-      ...orderData,
-      id: orderId,
-      createdAt: new Date().toISOString(),
-      trackingNumber,
-      estimatedDeliveryDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric'
-      })
-    };
-
-    try {
-      await setDoc(doc(db, 'orders', orderId), sanitizeDocData(newOrder));
-    } catch (e) {
-      console.warn('Firestore order save notice:', e);
-    }
-
-    setOrders((prev) => [newOrder, ...prev]);
+  /** The server creates the order after payment is verified; this only records it in the browser. */
+  const recordCompletedOrder = (newOrder: Order): Order => {
+    const orderId = newOrder.id;
+    rememberOnDevice(newOrder);
     setActiveProductId(orderId);
     if (typeof sessionStorage !== 'undefined') {
       try {
@@ -564,6 +545,20 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     clearCart();
     addToast('Order Placed Successfully!', `Order #${orderId} confirmed with plain discrete packaging.`);
     return newOrder;
+  };
+
+  const lookupOrder = async (code: string, phone: string): Promise<Order | null> => {
+    if (!code.trim() || phoneKey(phone).length < 9) return null;
+    try {
+      const snap = await getDoc(doc(db, ORDER_LOOKUP_COLLECTION, lookupDocId(code, phone)));
+      if (!snap.exists()) return null;
+      const found = snap.data() as Order;
+      rememberOnDevice(found);
+      return found;
+    } catch (e) {
+      console.warn('Order lookup error:', e);
+      return null;
+    }
   };
 
   // Admin Actions
@@ -602,21 +597,69 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const addCategory = async (categoryData: Omit<Category, 'id'>) => {
+    const id = 'cat-' + (categories.length + 1);
+    const newCategory: Category = { ...categoryData, id };
+    setCategories((prev) => [newCategory, ...prev]);
+    addToast('Category Added', `${newCategory.name} created in database.`);
+    try {
+      await setDoc(doc(db, 'categories', id), sanitizeDocData(newCategory));
+    } catch (e) {
+      console.warn('Firestore addCategory error:', e);
+    }
+  };
+
+  const updateCategory = async (id: string, categoryData: Partial<Category>) => {
+    const existing = categories.find((c) => c.id === id);
+    if (!existing) return;
+    const updated = { ...existing, ...categoryData };
+    setCategories((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    addToast('Category Updated', `Changes saved for ${updated.name}.`);
+    try {
+      await setDoc(doc(db, 'categories', id), sanitizeDocData(updated), { merge: true });
+    } catch (e) {
+      console.warn('Firestore updateCategory error:', e);
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    setCategories((prev) => prev.filter((c) => c.id !== id));
+    addToast('Category Deleted', 'Category removed from database.', 'info');
+    try {
+      await deleteDoc(doc(db, 'categories', id));
+    } catch (e) {
+      console.warn('Firestore deleteCategory error:', e);
+    }
+  };
+
   const updateOrderStatus = async (orderId: string, status: Order['status']) => {
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
+    const target = orders.find((o) => o.id === orderId);
+    setRemoteOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
     addToast('Order Status Updated', `Order #${orderId} marked as ${status}.`);
     try {
       await setDoc(doc(db, 'orders', orderId), sanitizeDocData({ status }), { merge: true });
+      if (target) {
+        await Promise.all(
+          lookupDocIds(target).map((id) =>
+            setDoc(doc(db, ORDER_LOOKUP_COLLECTION, id), toLookupRecord({ ...target, status }))
+          )
+        );
+      }
     } catch (e) {
       console.warn('Firestore updateOrderStatus error:', e);
     }
   };
 
   const deleteOrder = async (orderId: string) => {
-    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    const target = orders.find((o) => o.id === orderId);
+    setRemoteOrders((prev) => prev.filter((o) => o.id !== orderId));
+    setDeviceOrders((prev) => prev.filter((o) => o.id !== orderId));
     addToast('Order Removed', `Order #${orderId} deleted from database.`, 'info');
     try {
       await deleteDoc(doc(db, 'orders', orderId));
+      if (target) {
+        await Promise.all(lookupDocIds(target).map((id) => deleteDoc(doc(db, ORDER_LOOKUP_COLLECTION, id))));
+      }
     } catch (e) {
       console.warn('Firestore deleteOrder error:', e);
     }
@@ -775,12 +818,16 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         quickHide,
         setFilters,
         resetFilters,
-        placeOrder,
+        recordCompletedOrder,
+        lookupOrder,
         addToast,
         removeToast,
         addProduct,
         updateProduct,
         deleteProduct,
+        addCategory,
+        updateCategory,
+        deleteCategory,
         updateOrderStatus,
         deleteOrder,
         addCoupon,

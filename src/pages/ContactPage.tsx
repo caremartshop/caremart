@@ -53,8 +53,8 @@ export const ContactPage: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-slate-900">{t('contact.email_support', 'Encrypted Email Support')}</h4>
-                <a href="mailto:support@caremart.shop" className="text-red-600 font-bold text-xs mt-0.5 hover:underline block">
-                  support@caremart.shop
+                <a href="mailto:support@tumacaremart.shop" className="text-red-600 font-bold text-xs mt-0.5 hover:underline block">
+                  support@tumacaremart.shop
                 </a>
                 <p className="text-slate-400 text-[10px] mt-0.5">{t('contact.response_time', 'Response within 2 hours')}</p>
               </div>
@@ -66,12 +66,12 @@ export const ContactPage: React.FC = () => {
               </div>
               <div>
                 <h4 className="font-bold text-slate-900">{t('contact.phone_whatsapp', 'Phone Call & WhatsApp')}</h4>
-                <a href="tel:0781111155" className="text-slate-900 font-extrabold text-xs mt-0.5 hover:text-red-600 block">
-                  0781111155
+                <a href="tel:+250781015211" className="text-slate-900 font-extrabold text-xs mt-0.5 hover:text-red-600 block">
+                  0781015211
                 </a>
                 <div className="flex items-center gap-2 mt-1.5">
                   <a
-                    href="https://wa.me/250781111155"
+                    href="https://wa.me/250781015211"
                     target="_blank"
                     rel="noreferrer"
                     className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] flex items-center gap-1 transition-colors"
@@ -80,7 +80,7 @@ export const ContactPage: React.FC = () => {
                     <span>{t('contact.whatsapp_chat', 'WhatsApp Chat')}</span>
                   </a>
                   <a
-                    href="tel:0781111155"
+                    href="tel:+250781015211"
                     className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-900 text-slate-100 font-bold text-[10px] flex items-center gap-1 transition-colors"
                   >
                     <Phone className="w-3 h-3" />
@@ -142,7 +142,7 @@ export const ContactPage: React.FC = () => {
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  placeholder="0781111155"
+                  placeholder="e.g. 0788123456"
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium focus:outline-none focus:border-red-600"
                 />
               </div>

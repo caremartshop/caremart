@@ -238,7 +238,7 @@ export async function downloadReceiptPDF(order: Order, elementId?: string): Prom
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(8);
   pdf.setTextColor(100, 116, 139);
-  pdf.text('CareMart Rwanda • tumacaremart.shop • Support: +250 788 000 000', pageWidth / 2, y + 6, { align: 'center' });
+  pdf.text('CareMart Rwanda • tumacaremart.shop • Support: +250 781 015 211 • support@tumacaremart.shop', pageWidth / 2, y + 6, { align: 'center' });
 
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(7.5);

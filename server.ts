@@ -3,150 +3,21 @@ import path from 'path';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { checkoutRouter, settleCheckoutByPaypackRef } from './server/checkout';
+import { HttpError, requireAdmin } from './server/firebaseAdmin';
+import { normalizePaypackStatus } from './server/paypack';
+import { renderPage, renderSitemap } from './server/seo';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const PAYPACK_API_BASE_URL = 'https://payments.paypack.rw/api';
-const PAYPACK_AUTH_URL = `${PAYPACK_API_BASE_URL}/auth/agents/authorize`;
-const PAYPACK_EVENTS_URL = `${PAYPACK_API_BASE_URL}/events/transactions`;
 
 app.use('/api/paypack/webhook', express.raw({ type: 'application/json', limit: '50mb' }));
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
-let cachedPaypackAuth: { token: string; expiresAt: number } | null = null;
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value.trim();
-}
-
-async function getPaypackAccessToken(): Promise<string> {
-  const clientId = requireEnv('PAYPACK_CLIENT_ID');
-  const clientSecret = requireEnv('PAYPACK_CLIENT_SECRET');
-
-  if (cachedPaypackAuth && Date.now() < cachedPaypackAuth.expiresAt - 60000) {
-    return cachedPaypackAuth.token;
-  }
-
-  const response = await fetch(PAYPACK_AUTH_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
-    body: JSON.stringify({
-      client_id: clientId,
-      client_secret: clientSecret,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Paypack authentication failed (${response.status}): ${errorBody || 'Invalid Paypack client credentials.'}`);
-  }
-
-  const data = await response.json();
-  const token = data?.access || data?.token || data?.access_token;
-
-  if (!token || typeof token !== 'string') {
-    throw new Error('Paypack authentication response did not include an access token.');
-  }
-
-  cachedPaypackAuth = {
-    token,
-    expiresAt: Date.now() + 50 * 60 * 1000,
-  };
-
-  return token;
-}
-
-function normalizePhoneNumber(phone: unknown): string {
-  const rawDigits = String(phone ?? '').replace(/\D/g, '');
-  let normalized = rawDigits;
-
-  if (rawDigits.startsWith('250') && rawDigits.length >= 12) {
-    normalized = '0' + rawDigits.substring(3);
-  } else if (!rawDigits.startsWith('0') && rawDigits.length === 9) {
-    normalized = '0' + rawDigits;
-  }
-
-  if (!normalized) {
-    return String(phone ?? '').trim();
-  }
-
-  return normalized;
-}
-
-function normalizePaypackStatus(status: unknown): 'pending' | 'successful' | 'failed' | null {
-  if (!status || typeof status !== 'string') {
-    return null;
-  }
-
-  const value = status.trim().toLowerCase();
-
-  if (value === 'successful' || value === 'success' || value === 'completed' || value === 'processed' || value === 'approved') {
-    return 'successful';
-  }
-
-  if (value === 'failed' || value === 'cancelled' || value === 'rejected' || value === 'expired' || value === 'declined') {
-    return 'failed';
-  }
-
-  if (value === 'pending' || value === 'queued' || value === 'processing' || value === 'created') {
-    return 'pending';
-  }
-
-  return null;
-}
-
-function extractStatusFromPaypackPayload(data: any): 'pending' | 'successful' | 'failed' | null {
-  if (!data || typeof data !== 'object') {
-    return null;
-  }
-
-  const directStatus = normalizePaypackStatus(data.status);
-  if (directStatus) {
-    return directStatus;
-  }
-
-  const directKind = normalizePaypackStatus(data.event_kind || data.kind || data.type);
-  if (directKind) {
-    return directKind;
-  }
-
-  if (data.data) {
-    const nested = extractStatusFromPaypackPayload(data.data);
-    if (nested) {
-      return nested;
-    }
-  }
-
-  if (Array.isArray(data.transactions)) {
-    for (const tx of data.transactions) {
-      const nested = extractStatusFromPaypackPayload(tx);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  if (Array.isArray(data.events)) {
-    for (const event of data.events) {
-      const nested = extractStatusFromPaypackPayload(event);
-      if (nested) {
-        return nested;
-      }
-    }
-  }
-
-  return null;
-}
+// Large limit only for admin media uploads; everything else stays small.
+app.use('/api/cloudinary/upload', express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '200kb' }));
+app.use(express.urlencoded({ limit: '200kb', extended: true }));
 
 // --------------------------------------------------------
 // API Endpoints
@@ -154,6 +25,7 @@ function extractStatusFromPaypackPayload(data: any): 'pending' | 'successful' | 
 
 app.post('/api/cloudinary/upload', async (req, res) => {
   try {
+    await requireAdmin(req.get('authorization'));
     const { file, resourceType = 'auto', folder = 'caremart' } = req.body;
 
     if (!file) {
@@ -210,139 +82,16 @@ app.post('/api/cloudinary/upload', async (req, res) => {
       error: data?.error?.message || 'Cloudinary upload failed.',
     });
   } catch (err: any) {
+    if (err instanceof HttpError) {
+      return res.status(err.status).json({ success: false, error: err.message });
+    }
     console.error('Cloudinary upload route error:', err);
     return res.status(500).json({ success: false, error: err.message || 'Internal Cloudinary upload error' });
   }
 });
 
-app.post('/api/paypack/cashin', async (req, res) => {
-  try {
-    const { phone, amount, mode } = req.body;
-    const numericAmount = Number(amount);
-
-    if (!phone || !String(phone).trim()) {
-      return res.status(400).json({ success: false, error: 'A valid phone number is required.' });
-    }
-
-    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      return res.status(400).json({ success: false, error: 'A valid positive whole number amount is required.' });
-    }
-
-    if (Math.round(numericAmount) < 100) {
-      return res.status(400).json({
-        success: false,
-        error: 'Paypack requires a minimum payment amount of 100 RWF. Please ensure your total order amount is at least 100 RWF.',
-      });
-    }
-
-    const cleanPhone = normalizePhoneNumber(phone);
-    if (!cleanPhone || cleanPhone.length < 10) {
-      return res.status(400).json({ success: false, error: 'Phone number is invalid.' });
-    }
-
-    const token = await getPaypackAccessToken();
-    const cashinUrl = `${PAYPACK_API_BASE_URL}/transactions/cashin`;
-
-    const paypackRes = await fetch(cashinUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        amount: Math.round(numericAmount),
-        number: cleanPhone,
-      }),
-    });
-
-    const paypackData = await paypackRes.json().catch(() => ({}));
-
-    if (!paypackRes.ok) {
-      const paypackError = paypackData?.message || paypackData?.error || paypackData?.title || 'Paypack cash-in request rejected by gateway.';
-      return res.status(paypackRes.status || 400).json({
-        success: false,
-        error: paypackError,
-        details: paypackData,
-      });
-    }
-
-    const txRef = paypackData?.ref || paypackData?.reference || paypackData?.id || paypackData?.transaction_ref || paypackData?.transactionReference;
-    const status = normalizePaypackStatus(paypackData?.status) || 'pending';
-
-    if (!txRef) {
-      return res.status(502).json({
-        success: false,
-        error: 'Paypack cash-in response did not include a transaction reference.',
-        details: paypackData,
-      });
-    }
-
-    return res.json({
-      success: true,
-      ref: txRef,
-      status,
-      mode: mode || 'momo',
-      phone: cleanPhone,
-      amount: Math.round(numericAmount),
-      message: 'Paypack payment prompt sent to handset. Awaiting PIN entry.',
-      paypackResponse: paypackData,
-    });
-  } catch (err: any) {
-    console.error('Paypack cashin route error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Internal server error' });
-  }
-});
-
-app.get('/api/paypack/status/:ref', async (req, res) => {
-  try {
-    const { ref } = req.params;
-
-    if (!ref) {
-      return res.status(400).json({ success: false, error: 'Transaction ref is required.' });
-    }
-
-    const token = await getPaypackAccessToken();
-    const statusUrl = `${PAYPACK_EVENTS_URL}?ref=${encodeURIComponent(ref)}&kind=CASHIN`;
-
-    const paypackRes = await fetch(statusUrl, {
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!paypackRes.ok) {
-      return res.json({
-        success: true,
-        ref,
-        status: 'pending',
-      });
-    }
-
-    const data = await paypackRes.json().catch(() => null);
-    const status = extractStatusFromPaypackPayload(data);
-
-    if (status) {
-      return res.json({
-        success: true,
-        ref,
-        status,
-        paypackData: data,
-      });
-    }
-
-    return res.json({
-      success: true,
-      ref,
-      status: 'pending',
-      paypackData: data,
-    });
-  } catch (err: any) {
-    console.error('Paypack status route error:', err);
-    return res.status(500).json({ success: false, error: err.message || 'Server error' });
-  }
-});
+// Server-authoritative checkout (prices, Paypack prompt and order creation all happen here)
+app.use('/api/checkout', checkoutRouter);
 
 app.post('/api/paypack/webhook', async (req, res) => {
   try {
@@ -377,12 +126,9 @@ app.post('/api/paypack/webhook', async (req, res) => {
     const ref = payload?.data?.ref || payload?.ref;
     const status = normalizePaypackStatus(payload?.data?.status || payload?.status) || 'pending';
 
-    if (ref) {
-      // Store only a verified status for later checks, without exposing secrets or tokens.
-      const verifiedStatus = { ref, status };
-      if (verifiedStatus.ref) {
-        // no-op reference kept intentionally small and safe for future webhook processing
-      }
+    if (ref && status !== 'pending') {
+      // Signature verified: settle the matching checkout (creates the order once paid)
+      await settleCheckoutByPaypackRef(String(ref)).catch((e) => console.error('Webhook settle error:', e));
     }
 
     return res.json({ success: true, received: true, ref, status });
@@ -395,12 +141,23 @@ app.post('/api/paypack/webhook', async (req, res) => {
 // --------------------------------------------------------
 // Start Express App & Mount Vite
 // --------------------------------------------------------
-async function startServer() {
-  app.get('/sitemap.xml', (req, res) => {
-    res.header('Content-Type', 'application/xml');
-    res.sendFile(path.join(process.cwd(), 'public', 'sitemap.xml'));
-  });
+// Live sitemap (all products + categories) and server-rendered SEO tags for every page URL
+app.get('/sitemap.xml', renderSitemap);
+app.all('/api/*', (_req, res) => res.status(404).json({ success: false, error: 'Not found.' }));
 
+function registerPageRoutes() {
+  const distPath = path.join(process.cwd(), 'dist');
+  // index: false so "/" goes through renderPage too
+  app.use(express.static(distPath, { index: false, maxAge: '1h' }));
+  app.get('*', renderPage);
+}
+
+if (process.env.VERCEL) {
+  // Vercel serves dist/ assets itself and rewrites page URLs to this function
+  app.get('*', renderPage);
+}
+
+async function startServer() {
   app.get('/robots.txt', (req, res) => {
     res.header('Content-Type', 'text/plain');
     res.sendFile(path.join(process.cwd(), 'public', 'robots.txt'));
@@ -413,11 +170,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
+    registerPageRoutes();
   }
 
   app.listen(PORT, '0.0.0.0', () => {

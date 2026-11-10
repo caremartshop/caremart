@@ -26,14 +26,14 @@ export const Footer: React.FC = () => {
               <div className="pt-2 space-y-1.5 text-xs">
                 <p className="flex items-center gap-2 text-slate-300">
                   <span className="font-bold text-red-500">Email:</span>
-                  <a href="mailto:support@caremart.shop" className="hover:underline font-medium text-slate-200">
-                    support@caremart.shop
+                  <a href="mailto:support@tumacaremart.shop" className="hover:underline font-medium text-slate-200">
+                    support@tumacaremart.shop
                   </a>
                 </p>
                 <p className="flex items-center gap-2 text-slate-300">
                   <span className="font-bold text-emerald-400">Phone & WhatsApp:</span>
-                  <a href="https://wa.me/250788345678" target="_blank" rel="noreferrer" className="hover:underline font-bold text-emerald-300">
-                    +250 788 345 678
+                  <a href="https://wa.me/250781015211" target="_blank" rel="noreferrer" className="hover:underline font-bold text-emerald-300">
+                    +250 781 015 211
                   </a>
                 </p>
               </div>

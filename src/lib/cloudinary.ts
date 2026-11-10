@@ -1,3 +1,5 @@
+import { auth } from './firebase';
+
 export interface CloudinaryUploadResponse {
   success: boolean;
   url: string;
@@ -48,6 +50,8 @@ export async function uploadMediaToCloudinary(
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            // Upload endpoint is admin-only; the server verifies this token
+            Authorization: `Bearer ${(await auth.currentUser?.getIdToken()) || ''}`,
           },
           body: JSON.stringify({
             file: base64Data,

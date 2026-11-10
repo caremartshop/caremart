@@ -565,7 +565,7 @@ export const HomePage: React.FC = () => {
             </div>
             <div>
               <h4 className="font-extrabold text-xs text-slate-900">{t('home.support_title', '24/7 Support Helpline')}</h4>
-              <p className="text-[11px] text-slate-500 font-medium">Confidential care at <strong className="text-slate-800 font-bold">+250 788 345 678</strong>.</p>
+              <p className="text-[11px] text-slate-500 font-medium">Confidential care at <strong className="text-slate-800 font-bold">+250 781 015 211</strong>.</p>
             </div>
           </div>
 

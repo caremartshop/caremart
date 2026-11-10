@@ -336,7 +336,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
               </div>
 
               {/* Admin Portal (if admin or debug access) */}
-              {(isAdmin || currentUser?.email?.includes('admin') || currentUser?.email === 'christianiyonzima01@gmail.com') && (
+              {isAdmin && (
                 <div className="pt-2 border-t border-slate-100">
                   <p className="px-3 text-[10px] font-black uppercase tracking-wider text-amber-600 mb-1">
                     Administration
@@ -368,7 +368,7 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                 </p>
 
                 <a
-                  href="https://wa.me/250788345678?text=Hello%20CareMart%20Support"
+                  href="https://wa.me/250781015211?text=Hello%20CareMart%20Support"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full p-2.5 rounded-xl flex items-center justify-between text-xs font-bold text-emerald-700 hover:bg-emerald-50 transition-colors"
@@ -381,12 +381,12 @@ export const NavigationDrawer: React.FC<NavigationDrawerProps> = ({
                 </a>
 
                 <a
-                  href="tel:+250788345678"
+                  href="tel:+250781015211"
                   className="w-full p-2.5 rounded-xl flex items-center justify-between text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <Phone className="w-4 h-4 text-red-500" />
-                    <span>Helpline: +250 788 345 678</span>
+                    <span>Helpline: +250 781 015 211</span>
                   </div>
                 </a>
 

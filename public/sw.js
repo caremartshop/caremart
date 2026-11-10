@@ -1,7 +1,6 @@
-const CACHE_NAME = 'caremart-pwa-v1';
+const CACHE_NAME = 'caremart-pwa-v2';
 const STATIC_ASSETS = [
   '/',
-  '/index.html',
   '/manifest.json',
   '/icon.svg',
   '/icon-192.svg',
@@ -41,7 +40,7 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
   // Exclude non-GET and firestore / external API calls from service worker cache interference
-  if (event.request.method !== 'GET' || url.protocol.startsWith('chrome-extension') || url.hostname.includes('firestore.googleapis.com') || url.hostname.includes('identitytoolkit.googleapis.com')) {
+  if (event.request.method !== 'GET' || url.protocol.startsWith('chrome-extension') || url.hostname.includes('firestore.googleapis.com') || url.hostname.includes('identitytoolkit.googleapis.com') || url.pathname.startsWith('/api/')) {
     return;
   }
 

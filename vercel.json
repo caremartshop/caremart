@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/server.ts": {
-      "includeFiles": "dist/server.cjs"
+      "includeFiles": "dist/**"
     }
   },
   "rewrites": [
@@ -14,8 +14,12 @@
       "destination": "/api/server"
     },
     {
+      "source": "/sitemap.xml",
+      "destination": "/api/server"
+    },
+    {
       "source": "/((?!api/|assets/|.*\\.[a-zA-Z0-9]+$).*)",
-      "destination": "/index.html"
+      "destination": "/api/server"
     }
   ]
 }

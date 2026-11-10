@@ -41,7 +41,7 @@ export const OrderSuccessPage: React.FC = () => {
   })();
 
   const targetOrderId = activeProductId || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('last_caremart_order_id') : null);
-  const order = orders.find((o) => o.id === targetOrderId) || (cachedOrder?.id === targetOrderId ? cachedOrder : null) || orders[0] || cachedOrder;
+  const order = orders.find((o) => o.id === targetOrderId) || (cachedOrder?.id === targetOrderId ? cachedOrder : null) || cachedOrder;
 
   const orderId = order?.id || targetOrderId || 'ORD-849201';
   const trackingNumber = order?.trackingNumber || 'SS-TRK-' + (orderId.replace(/[^0-9]/g, '') || '8849');

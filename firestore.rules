@@ -1,76 +1,120 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function for admin check
-    function isAdmin() {
-      return request.auth != null && (
-        request.auth.token.email == 'admin@secureshop.com' ||
-        request.auth.token.admin == true ||
-        (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
-        )
-      );
+
+    // ---------- Helpers ----------
+
+    // The ONLY admin accounts. Keep in sync with src/lib/adminAccess.ts.
+    function isAdminEmail() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in ['admin@caremart.rw'];
     }
-    
-    // Helper function for user authentication
+
+    // Admin = allowlisted email, or a custom claim set server-side (Firebase Admin SDK).
+    // Deliberately NOT based on users/{uid}.role, which a user could otherwise influence.
+    function isAdmin() {
+      return isAdminEmail() || (request.auth != null && request.auth.token.get('admin', false) == true);
+    }
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper for self ownership
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    // Products collection: public read and write
+    // A user may only store role 'customer' on their profile, unless they are an allowlisted admin.
+    function roleAllowed() {
+      let role = request.resource.data.get('role', 'customer');
+      return role == 'customer' || (role == 'admin' && isAdminEmail());
+    }
+
+    // ---------- Public catalogue: anyone can read, only admins can change ----------
+
     match /products/{productId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Categories collection: public read and write
     match /categories/{categoryId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Users collection: read and write
-    match /users/{userId} {
-      allow read, write: if true;
-    }
-
-    // Orders collection: read and write
-    match /orders/{orderId} {
-      allow read, write: if true;
-    }
-
-    // Reviews collection: read and write
-    match /reviews/{reviewId} {
-      allow read, write: if true;
-    }
-
-    // Coupons collection: read and write
     match /coupons/{couponId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Hero Slides collection: read and write
     match /hero_slides/{slideId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Partner Pharmacies collection: read and write
     match /partner_pharmacies/{pharmacyId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
-    // Inquiries collection: read and write
-    match /inquiries/{inquiryId} {
-      allow read, write: if true;
-    }
-
-    // Settings & Banners
     match /settings/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin();
     }
+
+    // ---------- Users: own profile only; nobody can promote themselves ----------
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isAdmin() || (isOwner(userId) && roleAllowed());
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Orders ----------
+
+    match /orders/{orderId} {
+      // Orders are created ONLY by the server (Firebase Admin SDK, which bypasses these rules)
+      // after it has priced the cart itself and Paypack has confirmed payment.
+      allow create: if false;
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // Guest tracking copies, keyed "{ORDER_ID or TRACKING_CODE}_{last 9 phone digits}".
+    // Written by the server; single-document `get` only, so you must know both the code and the phone.
+    match /order_lookup/{lookupId} {
+      allow get: if true;
+      allow list, write: if isAdmin();
+    }
+
+    // pending_checkouts: server only (no client rule = no client access).
+
+    // ---------- Reviews ----------
+
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
+
+    // ---------- Contact inquiries: anyone can send, only admins can read ----------
+
+    match /inquiries/{inquiryId} {
+      allow create: if request.resource.data.status == 'new';
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ---------- Internal fulfillment network: admin only ----------
+
+    match /fulfillment_pharmacies/{pharmacyId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /order_fulfillment/{orderId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Everything else is closed.
   }
 }

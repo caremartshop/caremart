@@ -71,6 +71,44 @@ export interface Order {
   discretePackaging: boolean;
   trackingNumber: string;
   couponCode?: string;
+  /** GPS pin the customer shared at checkout; used only internally to route the order. */
+  deliveryLocation?: GeoPoint;
+}
+
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  /** Accuracy radius in metres when captured from device GPS. */
+  accuracy?: number;
+  source: 'gps' | 'map';
+}
+
+/**
+ * Internal fulfillment partner. Admin-only: never rendered on any customer-facing page.
+ * Stored in the `fulfillment_pharmacies` collection, separate from the public `partner_pharmacies`.
+ */
+export interface FulfillmentPharmacy {
+  id: string;
+  name: string;
+  contactPerson?: string;
+  phone: string;
+  whatsapp?: string;
+  address: string;
+  lat: number;
+  lng: number;
+  openingHours?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** Admin-only record of which pharmacy an order was routed to (collection `order_fulfillment`, doc id = order id). */
+export interface OrderFulfillment {
+  orderId: string;
+  pharmacyId: string;
+  pharmacyName: string;
+  distanceKm?: number;
+  assignedAt: string;
 }
 
 export interface Review {

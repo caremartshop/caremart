@@ -3,6 +3,7 @@ import { Product } from '../../types';
 import { useShop } from '../../context/ShopContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { motion } from 'motion/react';
+import { productPath } from '../../lib/seo';
 
 interface ProductCardProps {
   product: Product;
@@ -67,7 +68,20 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
           {/* Name */}
           <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 group-hover:text-red-600 transition-colors line-clamp-2 leading-snug">
-            {product.name}
+            {/* Real link so search engines can discover every product page */}
+            <a
+              href={productPath(product)}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) {
+                  e.stopPropagation(); // let the browser open a new tab
+                  return;
+                }
+                e.preventDefault();
+              }}
+              className="text-inherit no-underline"
+            >
+              {product.name}
+            </a>
           </h3>
 
           {/* Short Description */}

@@ -59,17 +59,17 @@ export const Header: React.FC<HeaderProps> = ({ onOpenCart }) => {
             {/* Left: Contact Info (Always observed & prominent) */}
             <div className="flex items-center gap-2.5 sm:gap-4 text-[11px] sm:text-xs shrink-0">
               <a 
-                href="tel:+250788345678" 
+                href="tel:+250781015211" 
                 className="flex items-center gap-1.5 text-slate-300 hover:text-white font-semibold transition-colors shrink-0"
               >
                 <Phone className="w-3.5 h-3.5 text-red-400 shrink-0" />
-                <span>{t('topbar.helpline', 'Helpline')}: <strong className="text-white font-black">+250 788 345 678</strong></span>
+                <span>{t('topbar.helpline', 'Helpline')}: <strong className="text-white font-black">+250 781 015 211</strong></span>
               </a>
               
               <span className="text-slate-700 hidden sm:inline">|</span>
               
               <a 
-                href="https://wa.me/250788345678?text=Hello%20CareMart%2C%20I%20have%20an%20inquiry%20regarding%20my%20order" 
+                href="https://wa.me/250781015211?text=Hello%20CareMart%2C%20I%20have%20an%20inquiry%20regarding%20my%20order" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-bold transition-colors shrink-0"

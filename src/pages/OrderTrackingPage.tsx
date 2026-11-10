@@ -21,11 +21,12 @@ import {
   Sparkles,
   MessageSquare,
   FileText,
-  Download
+  Download,
+  Loader2
 } from 'lucide-react';
 
 export const OrderTrackingPage: React.FC = () => {
-  const { orders, activeProductId, navigateTo, addToast } = useShop();
+  const { orders, activeProductId, navigateTo, addToast, lookupOrder } = useShop();
   const { currentUser, userProfile } = useAuth();
   const { t } = useLanguage();
 
@@ -59,61 +60,53 @@ export const OrderTrackingPage: React.FC = () => {
   }, [activeProductId, orders, userProfile]);
 
   const normalizePhone = (ph: string) => {
-    return ph.replace(/\D/g, '').slice(-8); // compare trailing 8 digits
+    return ph.replace(/\D/g, '').slice(-9); // compare trailing 9 digits (07X XXX XXXX)
   };
 
-  const handleTrackSearch = (e: React.FormEvent) => {
+  const [isSearching, setIsSearching] = useState(false);
+
+  const handleTrackSearch = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const cleanCode = orderIdInput.trim().toUpperCase();
     const cleanPhone = normalizePhone(phoneInput);
 
-    if (!cleanCode && !cleanPhone) {
-      addToast(t('track.info_required', 'Information Required'), t('track.info_required_desc', 'Please enter your Order ID or Phone Number.'), 'info');
+    if (!cleanCode || phoneInput.replace(/\D/g, '').length < 9) {
+      addToast(
+        t('track.info_required', 'Information Required'),
+        t('track.info_required_both', 'Please enter both your Order ID and the phone number used for the order.'),
+        'info'
+      );
       return;
     }
 
     setSearched(true);
 
-    // Find order matching Order ID and/or Phone Number
-    const match = orders.find((o) => {
-      const matchesCode = cleanCode ? (
-        o.id.toUpperCase() === cleanCode ||
-        o.trackingNumber.toUpperCase() === cleanCode ||
-        o.id.toUpperCase().includes(cleanCode) ||
-        o.trackingNumber.toUpperCase().includes(cleanCode)
-      ) : true;
-
-      const orderPhoneClean = normalizePhone(o.shippingAddress?.phone || '');
-      const matchesPhone = cleanPhone ? (
-        orderPhoneClean.includes(cleanPhone) || cleanPhone.includes(orderPhoneClean)
-      ) : true;
-
-      return matchesCode && matchesPhone;
+    // 1) Orders this browser already has (the signed-in customer's own orders, or orders placed on this device)
+    const localMatch = orders.find((o) => {
+      const codeOk = o.id.toUpperCase() === cleanCode || o.trackingNumber.toUpperCase() === cleanCode;
+      return codeOk && normalizePhone(o.shippingAddress?.phone || '') === cleanPhone;
     });
+
+    // 2) Secure lookup: exact Order ID / tracking code + phone, nothing else is searchable
+    let match = localMatch || null;
+    if (!match) {
+      setIsSearching(true);
+      try {
+        match = await lookupOrder(cleanCode, phoneInput);
+      } finally {
+        setIsSearching(false);
+      }
+    }
 
     if (match) {
       setFoundOrder(match);
       setFoundOrdersList([match]);
       addToast(t('track.order_found', 'Order Found!'), `${t('track.status_for', 'Showing real-time status for Order ID:')} ${match.id}`, 'success');
     } else {
-      // Fallback matching
-      const fallbackMatches = orders.filter((o) => {
-        const orderPhoneClean = normalizePhone(o.shippingAddress?.phone || '');
-        const matchesCode = cleanCode ? (o.id.toUpperCase().includes(cleanCode) || o.trackingNumber.toUpperCase().includes(cleanCode)) : false;
-        const matchesPhone = cleanPhone ? (orderPhoneClean.includes(cleanPhone) || cleanPhone.includes(orderPhoneClean)) : false;
-        return matchesCode || matchesPhone;
-      });
-
-      if (fallbackMatches.length > 0) {
-        setFoundOrder(fallbackMatches[0]);
-        setFoundOrdersList(fallbackMatches);
-        addToast(t('track.order_found', 'Order Found!'), `${t('track.status_for', 'Showing status for Order ID:')} ${fallbackMatches[0].id}`, 'success');
-      } else {
-        setFoundOrder(null);
-        setFoundOrdersList([]);
-        addToast(t('track.not_found', 'Order Not Found'), t('track.not_found_desc', 'No matching order found. Please check your Order ID and Phone Number.'), 'error');
-      }
+      setFoundOrder(null);
+      setFoundOrdersList([]);
+      addToast(t('track.not_found', 'Order Not Found'), t('track.not_found_desc', 'No matching order found. Please check your Order ID and Phone Number.'), 'error');
     }
   };
 
@@ -181,9 +174,10 @@ export const OrderTrackingPage: React.FC = () => {
 
           <button
             type="submit"
+            disabled={isSearching}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-amber-500 text-white font-extrabold text-xs shadow-md hover:opacity-95 transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
           >
-            <Search className="w-4 h-4" />
+            {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             <span>{searchMode === 'phone_only' ? t('track.btn_find_recover', 'Find My Order ID & Track Order') : t('track.btn_track_now', 'Track Order Now')}</span>
           </button>
         </form>

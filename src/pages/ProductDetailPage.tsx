@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
+import { findProduct } from '../lib/seo';
 import { useLanguage } from '../context/LanguageContext';
 import { 
   Heart, 
@@ -21,7 +22,7 @@ export const ProductDetailPage: React.FC = () => {
   const { products, activeProductId, addToCart, toggleWishlist, isInWishlist, navigateTo, addToast } = useShop();
   const { t, translateCategory } = useLanguage();
   
-  const product = products.find((p) => p.id === activeProductId) || products[0];
+  const product = findProduct(products, activeProductId) || products[0];
 
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);

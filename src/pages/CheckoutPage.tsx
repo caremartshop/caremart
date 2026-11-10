@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { useShop } from '../context/ShopContext';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
-import { ShippingAddress, Order } from '../types';
+import { ShippingAddress, Order, GeoPoint } from '../types';
 import { ShieldCheck, Lock, Box, CheckCircle2, ArrowRight, Smartphone, Zap, Loader2, AlertCircle, RefreshCw, Sparkles, UserCheck, Shield, Copy, Check, Info, MapPin, Truck, Phone, Package } from 'lucide-react';
 import { MtnMomoLogo, AirtelMoneyLogo } from '../components/common/PaymentLogos';
 import { DeliveryAnimationOverlay } from '../components/common/DeliveryAnimationOverlay';
 
+const DeliveryLocationPicker = lazy(() => import('../components/maps/DeliveryLocationPicker'));
+
 export const CheckoutPage: React.FC = () => {
-  const { cart, appliedCoupon, placeOrder, navigateTo, addToast } = useShop();
+  const { cart, appliedCoupon, recordCompletedOrder, navigateTo, addToast } = useShop();
   const { currentUser, userProfile } = useAuth();
   const { t } = useLanguage();
 
@@ -25,6 +27,45 @@ export const CheckoutPage: React.FC = () => {
   });
 
   const [paymentMethod, setPaymentMethod] = useState<'MTN MoMo' | 'Airtel Money'>('MTN MoMo');
+
+  // Delivery GPS pin (optional) — lets us dispatch from the closest point for faster delivery
+  const [deliveryLocation, setDeliveryLocation] = useState<GeoPoint | undefined>(undefined);
+  const [locationStatus, setLocationStatus] = useState<'idle' | 'locating' | 'error'>('idle');
+  const [locationError, setLocationError] = useState('');
+  const [showLocationMap, setShowLocationMap] = useState(false);
+
+  const requestCurrentLocation = () => {
+    if (!('geolocation' in navigator)) {
+      setLocationStatus('error');
+      setLocationError(t('checkout.location_unsupported', 'Your browser cannot share location. Tap the map to place your pin instead.'));
+      setShowLocationMap(true);
+      return;
+    }
+    setLocationStatus('locating');
+    setLocationError('');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setDeliveryLocation({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy),
+          source: 'gps'
+        });
+        setLocationStatus('idle');
+        setShowLocationMap(true);
+      },
+      (err) => {
+        setLocationStatus('error');
+        setLocationError(
+          err.code === err.PERMISSION_DENIED
+            ? t('checkout.location_denied', 'Location permission was denied. You can tap the map to place your pin instead.')
+            : t('checkout.location_failed', 'Could not detect your location. Tap the map to place your pin instead.')
+        );
+        setShowLocationMap(true);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  };
   
   // Payment Verification Modal state
   const [paymentPhone, setPaymentPhone] = useState(userProfile?.phone || '0788123456');
@@ -76,7 +117,7 @@ export const CheckoutPage: React.FC = () => {
         setPaymentPhone(userProfile.phone);
       }
       if (userProfile?.preferredPaymentMethod) {
-        setPaymentMethod(userProfile.preferredPaymentMethod as any);
+        setPaymentMethod(userProfile.preferredPaymentMethod.includes('Airtel') ? 'Airtel Money' : 'MTN MoMo');
       }
     }
   }, [userProfile, currentUser]);
@@ -98,57 +139,30 @@ export const CheckoutPage: React.FC = () => {
     };
   }, []);
 
-  const finalizeOrder = async (txRef?: string) => {
-    // Atomic lock to guarantee single execution per checkout
-    if (isFinalizingRef.current) {
-      return;
-    }
-    isFinalizingRef.current = true;
-
+  const stopPolling = () => {
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-
-    setIsSubmitting(true);
-    try {
-      const createdOrder = await placeOrder({
-        userId: currentUser ? currentUser.uid : 'guest',
-        isGuest: !currentUser,
-        userEmail: currentUser?.email || undefined,
-        items: cart,
-        subtotal,
-        discount: discountAmount,
-        shipping,
-        tax: 0,
-        total,
-        status: 'Processing',
-        shippingAddress: address,
-        paymentMethod,
-        paymentRef: txRef,
-        discretePackaging: true,
-        couponCode: appliedCoupon?.code
-      });
-
-      setCreatedOrderRef(createdOrder);
-      setReservedOrderId(createdOrder.id);
-      setPaymentStatus('approved');
-      setPaymentMessage('Payment confirmed & order registered by system!');
-      
-      // Immediately navigate to Order Success Page so it is shown directly
-      setPaymentModalOpen(false);
-      setShowDeliveryAnimation(false);
-      navigateTo('order-success', { productId: createdOrder.id });
-    } catch (err) {
-      console.error('Checkout error:', err);
-      isFinalizingRef.current = false;
-      addToast('Order Placement Error', 'Failed to record order. Please contact support.', 'info');
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
-  // Automated Paypack (MTN MoMo / Airtel) Payment Verification
+  // The server has verified payment and created the order; just record it and move on.
+  const completeOrder = (order: Order) => {
+    if (isFinalizingRef.current) return;
+    isFinalizingRef.current = true;
+    stopPolling();
+
+    const createdOrder = recordCompletedOrder(order);
+    setCreatedOrderRef(createdOrder);
+    setReservedOrderId(createdOrder.id);
+    setPaymentStatus('approved');
+    setPaymentMessage('Payment confirmed & order registered by system!');
+    setPaymentModalOpen(false);
+    setShowDeliveryAnimation(false);
+    navigateTo('order-success', { productId: createdOrder.id });
+  };
+
+  // Paypack (MTN MoMo / Airtel) — the server prices the cart, sends the prompt and creates the order once paid
   const handlePaypackPayment = async () => {
     if (isFinalizingRef.current || isSubmitting) return;
 
@@ -162,23 +176,35 @@ export const CheckoutPage: React.FC = () => {
       return;
     }
 
+    setIsSubmitting(true);
     setPaymentModalOpen(true);
     setPaymentStatus('initiating');
     setPaymentMessage('Connecting to Payment gateway...');
 
     try {
-      const mode = paymentMethod.includes('MoMo') ? 'momo' : 'airtel';
-      const response = await fetch('/api/paypack/cashin', {
+      const token = currentUser ? await currentUser.getIdToken() : null;
+      const response = await fetch('/api/checkout/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({
-          phone: paymentPhone.trim(),
-          amount: Math.round(total),
-          mode
+          items: cart.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+            selectedVariant: item.selectedVariant
+          })),
+          couponCode: appliedCoupon?.code,
+          shippingAddress: address,
+          deliveryLocation,
+          paymentPhone: paymentPhone.trim(),
+          paymentMethod,
+          expectedTotal: Math.round(total)
         })
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (!response.ok || !data.success) {
         setPaymentStatus('failed');
@@ -186,78 +212,58 @@ export const CheckoutPage: React.FC = () => {
         return;
       }
 
-      const txRef = data.ref;
-      setPaymentTxRef(txRef);
+      const { checkoutId, ref } = data as { checkoutId: string; ref: string };
+      setPaymentTxRef(ref);
       setPaymentStatus('waiting_verification');
       setPaymentMessage(`Payment prompt sent to ${paymentPhone}. System is automatically tracking payment confirmation...`);
 
-      // Automatically poll backend status: system confirms payment, user CANNOT manually approve
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
-      }
+      stopPolling();
+      const startedAt = Date.now();
+      let inFlight = false;
 
       pollIntervalRef.current = setInterval(async () => {
+        if (isFinalizingRef.current) {
+          stopPolling();
+          return;
+        }
+        if (Date.now() - startedAt > 5 * 60 * 1000) {
+          stopPolling();
+          setPaymentStatus('failed');
+          setPaymentMessage(
+            'We did not receive a payment confirmation in time. If money left your account, your order is still recorded automatically — check Track Order in a few minutes or contact support.'
+          );
+          return;
+        }
+        if (inFlight) return;
+        inFlight = true;
         try {
-          if (isFinalizingRef.current) {
-            if (pollIntervalRef.current) {
-              clearInterval(pollIntervalRef.current);
-              pollIntervalRef.current = null;
-            }
-            return;
-          }
-
-          const statusRes = await fetch(`/api/paypack/status/${txRef}`);
+          const statusRes = await fetch(`/api/checkout/status/${checkoutId}`);
           const statusData = await statusRes.json();
-
-          if (statusData.success) {
-            const rawStatus = (statusData.status || '').toLowerCase();
-            const approvedStatuses = ['successful', 'completed', 'approved', 'paid', 'success', 'processed'];
-            const failedStatuses = ['failed', 'rejected', 'expired', 'cancelled', 'declined'];
-
-            if (approvedStatuses.includes(rawStatus)) {
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-              if (isFinalizingRef.current) return;
-              setPaymentStatus('approved');
-              setPaymentMessage('Payment verified automatically by system!');
-              // Immediately finalize order
-              await finalizeOrder(txRef);
-            } else if (failedStatuses.includes(rawStatus)) {
-              if (pollIntervalRef.current) {
-                clearInterval(pollIntervalRef.current);
-                pollIntervalRef.current = null;
-              }
-              setPaymentStatus('failed');
-              setPaymentMessage(statusData.message || 'Payment request was cancelled or declined on handset.');
-            }
+          if (statusData.status === 'successful' && statusData.order) {
+            completeOrder(statusData.order as Order);
+          } else if (statusData.status === 'failed') {
+            stopPolling();
+            setPaymentStatus('failed');
+            setPaymentMessage(statusData.error || 'Payment request was cancelled or declined on handset.');
           }
         } catch (err) {
           console.warn('Payment status poll error:', err);
+        } finally {
+          inFlight = false;
         }
-      }, 2000);
-
+      }, 2500);
     } catch (err: any) {
       setPaymentStatus('failed');
       setPaymentMessage(err.message || 'Payment server network error.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (cart.length === 0 || isFinalizingRef.current || isSubmitting) return;
-
-    if (paymentMethod === 'MTN MoMo' || paymentMethod === 'Airtel Money') {
-  await handlePaypackPayment();
-} else {
-      setIsSubmitting(true);
-      setPaymentModalOpen(true);
-      setPaymentStatus('waiting_verification');
-      setPaymentMessage('Registering order in system...');
-      await finalizeOrder();
-    }
+    await handlePaypackPayment();
   };
 
   if (cart.length === 0 && !createdOrderRef && !isSubmitting && !paymentModalOpen && !showDeliveryAnimation) {
@@ -391,6 +397,67 @@ export const CheckoutPage: React.FC = () => {
                 placeholder={t('checkout.delivery_instructions_ph', 'e.g., Leave package at reception in plain packaging, call on arrival.')}
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-medium text-xs focus:outline-none focus:border-red-600"
               />
+            </div>
+
+            {/* Delivery GPS pin */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-slate-900 font-bold text-xs flex items-center gap-1.5">
+                    <MapPin className="w-4 h-4 text-red-600" />
+                    {t('checkout.location_title', 'Pin your exact delivery location')}
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                    {t('checkout.location_desc', 'Recommended — helps us deliver to you faster. Only used for this delivery.')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={requestCurrentLocation}
+                  disabled={locationStatus === 'locating'}
+                  className="px-3 py-2 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  {locationStatus === 'locating' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <MapPin className="w-3.5 h-3.5" />}
+                  <span>
+                    {locationStatus === 'locating'
+                      ? t('checkout.location_detecting', 'Detecting…')
+                      : deliveryLocation
+                        ? t('checkout.location_refresh', 'Update my location')
+                        : t('checkout.location_use_current', 'Use my current location')}
+                  </span>
+                </button>
+              </div>
+
+              {deliveryLocation && (
+                <p className="text-[11px] font-bold text-emerald-700 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  {t('checkout.location_set', 'Location pinned')}
+                  {deliveryLocation.source === 'gps' && deliveryLocation.accuracy ? ` (±${deliveryLocation.accuracy} m)` : ''}
+                  <span className="text-slate-500 font-medium">— {t('checkout.location_adjust_hint', 'drag the pin or tap the map to adjust')}</span>
+                </p>
+              )}
+              {locationStatus === 'error' && locationError && (
+                <p className="text-[11px] font-bold text-amber-700 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {locationError}
+                </p>
+              )}
+
+              {!showLocationMap && !deliveryLocation && (
+                <button
+                  type="button"
+                  onClick={() => setShowLocationMap(true)}
+                  className="text-[11px] font-bold text-slate-600 underline underline-offset-2 hover:text-red-600 cursor-pointer"
+                >
+                  {t('checkout.location_pick_on_map', 'Or choose it on the map')}
+                </button>
+              )}
+
+              {showLocationMap && (
+                <Suspense fallback={<div className="h-[240px] rounded-2xl bg-slate-100 animate-pulse" />}>
+                  <DeliveryLocationPicker value={deliveryLocation} onChange={setDeliveryLocation} />
+                </Suspense>
+              )}
             </div>
           </div>
 

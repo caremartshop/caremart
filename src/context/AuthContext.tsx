@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../lib/firebase';
+import { isAdminEmail } from '../lib/adminAccess';
 import { UserProfile, ShippingAddress } from '../types';
 
 export interface ProfileUpdateData {
@@ -31,7 +32,6 @@ interface AuthContextType {
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  toggleAdminRole: () => void;
   updateProfileData: (data: string | ProfileUpdateData, phone?: string) => Promise<void>;
 }
 
@@ -42,19 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Check if an email is a designated administrator email
-  const isDesignatedAdminEmail = (email?: string | null) => {
-    if (!email) return false;
-    const lower = email.toLowerCase().trim();
-    return (
-      lower === 'christianiyonzima01@gmail.com' ||
-      lower === 'admin@caremart.rw' ||
-      lower === 'admin@caremart.com' ||
-      lower.startsWith('admin@') ||
-      lower.includes('caremart-admin')
-    );
-  };
-
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -63,26 +50,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Check standard user document in Firestore users collection
           const userDocRef = doc(db, 'users', user.uid);
           const userDoc = await getDoc(userDocRef);
-          
-          // Also check if there is an 'admin' document in users collection
-          const adminDocRef = doc(db, 'users', 'admin');
-          let isAdminUid = false;
-          try {
-            const adminDoc = await getDoc(adminDocRef);
-            if (adminDoc.exists() && (adminDoc.data()?.email === user.email || adminDoc.data()?.uid === user.uid)) {
-              isAdminUid = true;
-            }
-          } catch {
-            // Ignore if admin doc is unreadable
-          }
 
-          const shouldBeAdmin = isDesignatedAdminEmail(user.email) || isAdminUid;
+          // Admin rights come only from the allowlist (enforced again by firestore.rules)
+          const shouldBeAdmin = isAdminEmail(user.email);
+          const expectedRole: UserProfile['role'] = shouldBeAdmin ? 'admin' : 'customer';
 
           if (userDoc.exists()) {
             const data = userDoc.data() as UserProfile;
-            if (shouldBeAdmin && data.role !== 'admin') {
-              const updatedData: UserProfile = { ...data, role: 'admin' };
-              await setDoc(userDocRef, updatedData, { merge: true });
+            if (data.role !== expectedRole) {
+              // Correct stale roles (e.g. accounts that self-promoted under the old rules)
+              const updatedData: UserProfile = { ...data, role: expectedRole };
+              await setDoc(userDocRef, { role: expectedRole }, { merge: true });
               setUserProfile(updatedData);
             } else {
               setUserProfile(data);
@@ -101,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (err) {
           console.error('Error fetching user profile from Firestore:', err);
-          const fallbackRole = isDesignatedAdminEmail(user.email) ? 'admin' : 'customer';
+          const fallbackRole = isAdminEmail(user.email) ? 'admin' : 'customer';
           setUserProfile({
             uid: user.uid,
             email: user.email || 'user@caremart.shop',
@@ -127,7 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const res = await createUserWithEmailAndPassword(auth, email, pass);
     if (res.user) {
       await updateProfile(res.user, { displayName: name });
-      const role = isDesignatedAdminEmail(email) ? 'admin' : 'customer';
+      const role = isAdminEmail(email) ? 'admin' : 'customer';
       const newProfile: UserProfile = {
         uid: res.user.uid,
         email: email,
@@ -136,15 +114,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         createdAt: new Date().toISOString()
       };
       await setDoc(doc(db, 'users', res.user.uid), newProfile);
-      
-      // Also register into 'users/admin' if it's the master admin
-      if (role === 'admin') {
-        try {
-          await setDoc(doc(db, 'users', 'admin'), newProfile, { merge: true });
-        } catch (e) {
-          console.warn('Could not update users/admin doc:', e);
-        }
-      }
 
       setUserProfile(newProfile);
     }
@@ -160,21 +129,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     await sendPasswordResetEmail(auth, email);
-  };
-
-  const toggleAdminRole = () => {
-    if (!currentUser) return;
-    const nextRole = userProfile?.role === 'admin' ? 'customer' : 'admin';
-    const updated: UserProfile = {
-      ...userProfile,
-      uid: currentUser.uid,
-      email: currentUser.email || '',
-      displayName: userProfile?.displayName || 'User',
-      role: nextRole,
-      createdAt: userProfile?.createdAt || new Date().toISOString()
-    };
-    setUserProfile(updated);
-    setDoc(doc(db, 'users', currentUser.uid), { role: nextRole }, { merge: true }).catch(console.error);
   };
 
   const updateProfileData = async (data: string | ProfileUpdateData, legacyPhone?: string) => {
@@ -229,11 +183,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUserProfile(updatedProfile);
   };
 
-  const isAdmin = !loading && !!currentUser && (
-    userProfile?.role === 'admin' || 
-    isDesignatedAdminEmail(currentUser.email) ||
-    currentUser.uid === 'admin'
-  );
+  // UI-level check only; Firestore rules independently enforce the same allowlist.
+  const isAdmin = !loading && !!currentUser && isAdminEmail(currentUser.email);
 
   return (
     <AuthContext.Provider
@@ -247,7 +198,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loginWithGoogle,
         logout,
         resetPassword,
-        toggleAdminRole,
         updateProfileData
       }}
     >

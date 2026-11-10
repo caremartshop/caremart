@@ -247,7 +247,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           {/* Footer Note */}
           <div className="border-t border-slate-100 pt-4 text-center space-y-1 text-[11px] text-slate-400">
             <p className="font-bold text-slate-600">CareMart Rwanda • tumacaremart.shop • Discrete Health Partner</p>
-            <p>For inquiries, WhatsApp or Call +250 788 000 000 • PDF invoice valid for courier dispatch.</p>
+            <p>For inquiries, WhatsApp or Call +250 781 015 211 • support@tumacaremart.shop • PDF invoice valid for courier dispatch.</p>
           </div>
 
         </div>
