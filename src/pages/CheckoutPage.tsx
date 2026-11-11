@@ -679,6 +679,29 @@ export const CheckoutPage: React.FC = () => {
                   </p>
                 </div>
 
+                {/* MTN MoMo fallback when the PIN prompt doesn't appear */}
+                {paymentMethod === 'MTN MoMo' && (
+                  <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-[11px] text-amber-950 space-y-2 text-left shadow-xs">
+                    <div className="flex items-center gap-2 font-bold text-amber-900">
+                      <Info className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>{t('checkout.momo_no_prompt_title', 'No payment pop-up on your phone?')}</span>
+                    </div>
+                    <p className="font-medium leading-relaxed">
+                      {t('checkout.momo_no_prompt_desc', 'If you are not getting a pop-up notification to pay, dial this code to confirm the payment:')}
+                    </p>
+                    <a
+                      href="tel:*182*7*1%23"
+                      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-slate-900 font-black text-base font-mono tracking-wider transition-colors"
+                    >
+                      <Phone className="w-4 h-4" />
+                      *182*7*1#
+                    </a>
+                    <p className="text-[10px] text-amber-800 font-medium">
+                      {t('checkout.momo_no_prompt_hint', 'Approve the pending CareMart payment with your MoMo PIN. This page will update automatically.')}
+                    </p>
+                  </div>
+                )}
+
                 {paymentTxRef && (
                   <p className="text-[10px] font-mono text-slate-400">
                     Gateway Ref: {paymentTxRef}
