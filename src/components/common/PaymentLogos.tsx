@@ -1,4 +1,5 @@
 import React from 'react';
+import airtelLogoUrl from '../../assets/images/airtel-logo.svg';
 
 export const MtnMomoLogo: React.FC<{ className?: string }> = ({ className = "h-7" }) => (
   <svg className={className} viewBox="0 0 130 42" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -12,18 +13,12 @@ export const MtnMomoLogo: React.FC<{ className?: string }> = ({ className = "h-7
   </svg>
 );
 
+// Official Airtel Africa logo (source: Wikimedia Commons, File:Airtel_Africa_logo.svg)
 export const AirtelMoneyLogo: React.FC<{ className?: string }> = ({ className = "h-7" }) => (
-  <svg className={className} viewBox="0 0 140 42" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Airtel Red background container */}
-    <rect width="140" height="42" rx="8" fill="#E40812" />
-    {/* Airtel 'a' ribbon icon */}
-    <g transform="translate(10, 7)">
-      <path d="M 14 26 C 7 26 5 20 8 13 C 11 6 18 3 23 7 C 27 10 27 16 23 21 C 20 24 16 26 14 26 Z" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" />
-      <path d="M 12 21 C 15 21 17 19 16 16 C 15 13 12 14 11 16" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
-    </g>
-    {/* Airtel Money brand text */}
-    <text x="88" y="21" fontFamily="Arial, Helvetica, sans-serif" fontSize="13" fontWeight="900" fill="#FFFFFF" textAnchor="middle">airtel</text>
-    <text x="88" y="33" fontFamily="Arial, Helvetica, sans-serif" fontSize="11" fontWeight="800" fill="#FFD700" textAnchor="middle" letterSpacing="0.8">money</text>
+  <svg className={className} viewBox="0 0 140 42" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Airtel Money">
+    <rect x="0.5" y="0.5" width="139" height="41" rx="8" fill="#FFFFFF" stroke="#F5C2C4" />
+    <image href={airtelLogoUrl} x="5" y="1" width="40" height="40" preserveAspectRatio="xMidYMid meet" />
+    <text x="51" y="28" fontFamily="Arial, Helvetica, sans-serif" fontSize="20" fontWeight="900" fill="#E40000" letterSpacing="0.3">money</text>
   </svg>
 );
 
