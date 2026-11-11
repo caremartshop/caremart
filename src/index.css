@@ -1,4 +1,10 @@
 @import "tailwindcss";
+/* Inter: clean, highly legible e-commerce font, self-hosted (no Google Fonts request) */
+@import "@fontsource-variable/inter";
+
+@theme {
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+}
 
 @layer base {
   :root {
@@ -9,7 +15,10 @@
   body {
     background-color: #ffffff;
     color: #0f172a;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     overflow-x: hidden;
   }
 

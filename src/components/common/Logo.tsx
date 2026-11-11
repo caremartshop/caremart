@@ -23,30 +23,17 @@ export const Logo: React.FC<LogoProps> = ({ className = '', showText = true, siz
           xmlns="http://www.w3.org/2000/svg"
           className="h-full w-auto"
         >
-          {/* "Care" in Bold Crimson Red */}
+          {/* "Care" (crimson) + "Mart" (yellow) in one line so spacing adapts to the font's real width */}
           <text
             x="4"
             y="32"
-            fill="#DC2626"
-            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-            fontSize="31"
+            fontFamily="'Inter Variable', Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+            fontSize="30"
             fontWeight="900"
-            letterSpacing="-0.5px"
+            letterSpacing="-0.8px"
           >
-            Care
-          </text>
-          
-          {/* "Mart" in Vibrant Yellow */}
-          <text
-            x="76"
-            y="32"
-            fill="#F59E0B"
-            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-            fontSize="31"
-            fontWeight="900"
-            letterSpacing="-0.5px"
-          >
-            Mart
+            <tspan fill="#DC2626">Care</tspan>
+            <tspan fill="#F59E0B" dx="6">Mart</tspan>
           </text>
 
           {/* Dynamic smile swoosh curve underneath "Mart" */}
